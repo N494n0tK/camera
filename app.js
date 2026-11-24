@@ -5,17 +5,25 @@
  *   撮影APIは使わず、カメラ映像の「今の1コマ」を canvas に描いて JPEG にするだけ。
  *   OS のシャッター処理を通らないので、撮影音は鳴らない。
  *
- * ・YouTube や音楽を止めない
+ * ・音楽を止めない
  *   1) getUserMedia は { audio: false } … マイクを使わない（使うと他アプリの再生が止まる）
  *   2) このページは音を一切再生しない（<audio> も AudioContext も使わない）
  *   3) プレビューの <video> は muted … 音声フォーカスを奪わない
  *   4) Safari では Audio Session を "ambient"（他の音と混ぜる）に設定
+ *
+ * ・YouTube はアプリ内で再生
+ *   iOS は、どこかのアプリがカメラを使い始めると、他のアプリのピクチャ・イン・ピクチャ
+ *   （Brave や YouTube のミニプレイヤー）の動画を止めてしまう。Web ページからは防げないので、
+ *   このページの中に YouTube を埋め込んで再生する（同じ画面の動画はカメラを使っても止まらない）。
  */
 
 // ── 音まわり：最初に「他のアプリの音を止めない」設定にしておく ──
-try {
-  if (navigator.audioSession) navigator.audioSession.type = 'ambient';
-} catch (_) { /* 非対応ブラウザでは何もしない */ }
+function setAudioSessionType(type) {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = type;
+  } catch (_) { /* 非対応ブラウザでは何もしない */ }
+}
+setAudioSessionType('ambient');
 
 const $ = (id) => document.getElementById(id);
 
@@ -79,6 +87,10 @@ const el = {
   viewerDelete: $('viewerDelete'), viewerShare: $('viewerShare'), viewerSave: $('viewerSave'),
   settings: $('settings'), aspectSeg: $('aspectSeg'), optGrid: $('optGrid'), optMirror: $('optMirror'),
   optHaptics: $('optHaptics'), optAuto: $('optAuto'), rowHaptics: $('rowHaptics'), rowAuto: $('rowAuto'),
+  ytChip: $('ytChip'), ytDock: $('ytDock'), ytTitle: $('ytTitle'), ytChange: $('ytChange'), ytClose: $('ytClose'),
+  ytPlayer: $('ytPlayer'), ytSheet: $('ytSheet'), ytLead: $('ytLead'), ytForm: $('ytForm'), ytInput: $('ytInput'),
+  ytPaste: $('ytPaste'), ytError: $('ytError'), ytPlay: $('ytPlay'), ytRecentWrap: $('ytRecentWrap'),
+  ytRecent: $('ytRecent'), ytClearRecent: $('ytClearRecent'),
   toast: $('toast'),
 };
 
@@ -1013,6 +1025,226 @@ el.optMirror.addEventListener('change', () => { settings.mirrorSave = el.optMirr
 el.optHaptics.addEventListener('change', () => { settings.haptics = el.optHaptics.checked; saveSettings(); });
 el.optAuto.addEventListener('change', () => { settings.autoSave = el.optAuto.checked; saveSettings(); });
 
+// ───────── YouTube を見ながら撮る（アプリ内で再生） ─────────
+
+const YT_HISTORY_KEY = 'mannerCamera.ytHistory';
+const YT_ID = /^[\w-]{11}$/;
+let ytCurrent = null;
+
+/** "1h2m3s" / "90s" / "90" → 秒 */
+function parseStartTime(t) {
+  if (!t) return 0;
+  if (/^\d+$/.test(t)) return Number(t);
+  const m = String(t).match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+  if (!m) return 0;
+  return (Number(m[1] || 0) * 3600) + (Number(m[2] || 0) * 60) + Number(m[3] || 0);
+}
+
+/** 共有テキストや URL から YouTube の動画 ID / 再生リストを取り出す */
+function parseYouTube(input) {
+  const text = String(input || '').trim();
+  if (!text) return null;
+  if (YT_ID.test(text)) return { id: text, list: null, start: 0 };
+  const found = text.match(/https?:\/\/[^\s<>"']+/);
+  let url;
+  try {
+    url = new URL(found ? found[0] : (/^[\w.-]+\.[a-z]{2,}\//i.test(text) ? `https://${text}` : text));
+  } catch (_) {
+    return null;
+  }
+  const host = url.hostname.toLowerCase().replace(/^(www|m|music)\./, '');
+  let id = null;
+  if (host === 'youtu.be') {
+    id = url.pathname.split('/')[1] || null;
+  } else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    if (url.pathname === '/watch') id = url.searchParams.get('v');
+    else {
+      const m = url.pathname.match(/^\/(?:shorts|live|embed|v)\/([\w-]{11})/);
+      if (m) id = m[1];
+    }
+  } else {
+    return null;
+  }
+  if (id && !YT_ID.test(id)) id = null;
+  const listParam = url.searchParams.get('list');
+  const list = listParam && /^[\w-]+$/.test(listParam) ? listParam : null;
+  if (!id && !list) return null;
+  return { id, list, start: parseStartTime(url.searchParams.get('t') || url.searchParams.get('start')) };
+}
+
+function ytEmbedURL(info) {
+  const params = new URLSearchParams({ playsinline: '1', autoplay: '1', rel: '0' });
+  if (info.list) params.set('list', info.list);
+  if (info.start) params.set('start', String(info.start));
+  return `https://www.youtube.com/embed/${info.id || 'videoseries'}?${params}`;
+}
+
+function ytKey(info) { return info.id ? `v:${info.id}` : `list:${info.list}`; }
+
+function loadYtHistory() {
+  try {
+    const list = JSON.parse(localStorage.getItem(YT_HISTORY_KEY) || '[]');
+    return Array.isArray(list) ? list.filter((x) => x && (x.id || x.list)) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveYtHistory(list) {
+  try { localStorage.setItem(YT_HISTORY_KEY, JSON.stringify(list.slice(0, 10))); } catch (_) {}
+}
+
+function rememberYt(info) {
+  const key = ytKey(info);
+  const list = loadYtHistory().filter((x) => ytKey(x) !== key);
+  list.unshift({ id: info.id, list: info.list, title: info.title || '', at: Date.now() });
+  saveYtHistory(list);
+}
+
+async function fetchYtTitle(info) {
+  if (info.title) return;
+  const target = info.id
+    ? `https://www.youtube.com/watch?v=${info.id}`
+    : `https://www.youtube.com/playlist?list=${info.list}`;
+  try {
+    const res = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(target)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || !data.title) return;
+    info.title = String(data.title);
+    if (ytCurrent === info) el.ytTitle.textContent = info.title;
+    const list = loadYtHistory();
+    const item = list.find((x) => ytKey(x) === ytKey(info));
+    if (item) { item.title = info.title; saveYtHistory(list); }
+  } catch (_) { /* タイトルが取れなくても再生はできる */ }
+}
+
+/** プレーヤーを開く。タップの処理から同期的に呼ぶと、Android では音つきで自動再生される */
+function openYouTube(info, { fromTap = false } = {}) {
+  // アプリ内の動画は普通の動画として鳴らす（"ambient" のままだとマナーモードで無音になるため）
+  setAudioSessionType('auto');
+  ytCurrent = info;
+  const iframe = document.createElement('iframe');
+  iframe.title = 'YouTube 動画プレーヤー';
+  iframe.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+  iframe.allowFullscreen = true;
+  iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+  iframe.src = ytEmbedURL(info);
+  el.ytPlayer.replaceChildren(iframe);
+  el.ytTitle.textContent = info.title || 'YouTube';
+  el.ytDock.hidden = false;
+  el.ytChip.hidden = true;
+  rememberYt(info);
+  fetchYtTitle(info);
+  if (isIOS || !fromTap) toast('動画の ▶ を押すと再生が始まります', 2400);
+}
+
+function closeYouTube() {
+  el.ytPlayer.replaceChildren();
+  el.ytDock.hidden = true;
+  el.ytChip.hidden = false;
+  ytCurrent = null;
+  setAudioSessionType('ambient');
+}
+
+function openYtSheet() {
+  cancelCountdown();
+  el.ytLead.textContent = isIOS
+    ? 'iPhone では、カメラを使い始めると、他のアプリのミニプレイヤー（ピクチャ・イン・ピクチャ）を iOS が止めてしまいます。ここで再生すれば、撮影中もずっと流れたままです。'
+    : 'ここで再生すれば、カメラを使っている間もずっと流れたままです。';
+  el.ytError.hidden = true;
+  el.ytInput.value = '';
+  renderYtRecent();
+  el.ytSheet.hidden = false;
+  openOverlay(() => { el.ytSheet.hidden = true; el.ytInput.blur(); });
+}
+
+function renderYtRecent() {
+  const list = loadYtHistory();
+  el.ytRecentWrap.hidden = list.length === 0;
+  const frag = document.createDocumentFragment();
+  for (const item of list) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'yt-recent-item';
+    b.dataset.id = item.id || '';
+    b.dataset.list = item.list || '';
+    const thumb = document.createElement('i');
+    thumb.className = 'thumb16';
+    if (item.id) thumb.style.backgroundImage = `url("https://i.ytimg.com/vi/${item.id}/mqdefault.jpg")`;
+    const label = document.createElement('span');
+    label.textContent = item.title || (item.id ? `動画 ${item.id}` : '再生リスト');
+    b.append(thumb, label);
+    frag.appendChild(b);
+  }
+  el.ytRecent.replaceChildren(frag);
+}
+
+function playFromSheet(info) {
+  closeTopOverlay();
+  openYouTube(info, { fromTap: true });
+}
+
+function submitYtForm() {
+  const info = parseYouTube(el.ytInput.value);
+  if (!info) {
+    el.ytError.textContent = el.ytInput.value.trim()
+      ? 'YouTube のリンクとして読み取れませんでした'
+      : 'YouTube のリンクを貼り付けてください';
+    el.ytError.hidden = false;
+    return;
+  }
+  playFromSheet(info);
+}
+el.ytForm.addEventListener('submit', (e) => { e.preventDefault(); submitYtForm(); });
+el.ytPlay.addEventListener('click', submitYtForm);
+el.ytInput.addEventListener('input', () => { el.ytError.hidden = true; });
+
+el.ytPaste.addEventListener('click', async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    el.ytInput.value = text.trim();
+    el.ytError.hidden = true;
+    const info = parseYouTube(text);
+    if (info) playFromSheet(info);
+    else { el.ytError.textContent = 'コピーされている内容が YouTube のリンクではありません'; el.ytError.hidden = false; }
+  } catch (_) {
+    el.ytInput.focus();
+    toast('入力欄を長押しして「ペースト」してください', 2600);
+  }
+});
+
+el.ytRecent.addEventListener('click', (e) => {
+  const b = e.target.closest('.yt-recent-item');
+  if (!b) return;
+  const id = b.dataset.id || null;
+  const list = b.dataset.list || null;
+  const saved = loadYtHistory().find((x) => ytKey(x) === ytKey({ id, list }));
+  playFromSheet({ id, list, start: 0, title: saved ? saved.title : '' });
+});
+
+el.ytClearRecent.addEventListener('click', () => {
+  saveYtHistory([]);
+  renderYtRecent();
+});
+
+el.ytSheet.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]')) closeTopOverlay();
+});
+el.ytChip.addEventListener('click', openYtSheet);
+el.ytChange.addEventListener('click', openYtSheet);
+el.ytClose.addEventListener('click', closeYouTube);
+
+/** Android でホーム画面に追加したとき：YouTube アプリの「共有」からこのアプリに送れる */
+function openSharedYouTube() {
+  const qs = new URLSearchParams(location.search);
+  const shared = ['url', 'text', 'title', 'yt'].map((k) => qs.get(k)).filter(Boolean).join(' ');
+  if (!shared) return;
+  try { history.replaceState(null, '', location.pathname); } catch (_) {}
+  const info = parseYouTube(shared);
+  if (info) openYouTube(info);
+}
+
 // ───────── カメラ画面のボタン ─────────
 
 el.btnShutter.addEventListener('click', onShutter);
@@ -1039,7 +1271,7 @@ el.btnTimer.addEventListener('click', () => {
 });
 
 el.silentPill.addEventListener('click', () => {
-  toast('シャッター音なし・YouTube や音楽も止めません', 2600);
+  toast('シャッター音なし・マイクも使いません', 2600);
 });
 
 // キーボード（PC）：スペース / Enter で撮影
@@ -1112,6 +1344,7 @@ layoutFrame();
 updateCameraUI();
 loadPhotos();
 startCamera();
+openSharedYouTube();
 
 if ('serviceWorker' in navigator && window.isSecureContext) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

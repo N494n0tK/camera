@@ -82,9 +82,14 @@ h2 { margin: 0; font-size: 17px; font-weight: 700; }
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "top" "yt" "stage" "bottom";
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-columns: minmax(0, 1fr);
 }
+.bar-top { grid-area: top; }
+.yt-dock { grid-area: yt; }
+.stage { grid-area: stage; }
+.bar-bottom { grid-area: bottom; }
 
 .bar {
   display: flex;
@@ -324,11 +329,153 @@ h2 { margin: 0; font-size: 17px; font-weight: 700; }
   transform: scale(0.48);
 }
 
+/* ───────── YouTube（アプリ内再生） ───────── */
+
+.yt-chip {
+  position: absolute;
+  top: 10px;
+  left: calc(var(--safe-l) + 10px);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px 0 9px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 13px;
+  font-weight: 700;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.yt-chip .ic { width: 18px; height: 18px; }
+
+.yt-dock {
+  width: 100%;
+  max-width: 640px;
+  justify-self: center;
+  padding: 0 var(--safe-r) 8px var(--safe-l);
+}
+.yt-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 4px 0 12px;
+}
+.yt-head > .ic { width: 18px; height: 18px; color: var(--accent); }
+.yt-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+.yt-head-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.yt-head-btn .ic { width: 20px; height: 20px; color: #fff; }
+.yt-head-btn:active { background: rgba(255, 255, 255, 0.12); }
+.yt-player {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #111;
+  overflow: hidden;
+}
+.yt-player iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.lead { margin: 4px 0 0; color: rgba(255, 255, 255, 0.78); font-size: 13.5px; }
+
+.yt-form { display: flex; gap: 8px; margin-top: 16px; }
+.field {
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--panel-2);
+  color: #fff;
+  font: inherit;
+  font-size: 16px; /* 16px 未満だと iPhone で入力時に画面が拡大される */
+  -webkit-user-select: text;
+  user-select: text;
+}
+.field::placeholder { color: rgba(255, 255, 255, 0.4); }
+.field:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.field-error { margin: 8px 2px 0; color: var(--danger); font-size: 13px; }
+#ytPlay { margin-top: 10px; }
+
+.yt-recent-wrap { margin-top: 18px; }
+.yt-recent-head { display: flex; align-items: center; justify-content: space-between; }
+.yt-recent-head h3 { margin: 0; font-size: 14px; color: var(--sub); }
+.yt-recent-head .text-btn { height: 32px; font-size: 13px; }
+.yt-recent {
+  display: flex;
+  gap: 10px;
+  margin: 6px -20px 0;
+  padding: 2px 20px 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+.yt-recent::-webkit-scrollbar { display: none; }
+.yt-recent-item {
+  flex: none;
+  width: 140px;
+  text-align: left;
+}
+.yt-recent-item .thumb16 {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: var(--panel-3) center / cover no-repeat;
+}
+.yt-recent-item span {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.85);
+}
+.small-note { margin: 14px 0 14px; color: var(--sub); font-size: 12px; }
+
 /* 横向きのスマホ：操作部を左右に */
 @media (orientation: landscape) and (max-height: 560px) {
   .app {
+    grid-template-areas: "top yt stage bottom";
     grid-template-rows: minmax(0, 1fr);
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+  }
+  .yt-dock {
+    align-self: center;
+    width: min(40vw, 360px);
+    padding: 0 0 0 4px;
   }
   .bar { width: auto; max-width: none; justify-self: auto; }
   .bar-top {

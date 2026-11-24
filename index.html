@@ -32,6 +32,8 @@
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9.2 4.8 2.8-4.8 2.8z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   </svg>
 
   <!-- カメラ画面 -->
@@ -54,7 +56,19 @@
       </button>
     </header>
 
+    <!-- YouTube を見ながら撮る：同じ画面の中で再生するので、カメラを起動しても止まらない -->
+    <section class="yt-dock" id="ytDock" hidden aria-label="YouTube">
+      <div class="yt-head">
+        <svg class="ic"><use href="#i-play"/></svg>
+        <span class="yt-title" id="ytTitle">YouTube</span>
+        <button class="yt-head-btn" id="ytChange" type="button">変更</button>
+        <button class="yt-head-btn" id="ytClose" type="button" aria-label="動画を閉じる"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+      <div class="yt-player" id="ytPlayer"></div>
+    </section>
+
     <main class="stage" id="stage">
+      <button class="yt-chip" id="ytChip" type="button"><svg class="ic"><use href="#i-play"/></svg><span>YouTube</span></button>
       <div class="frame" id="frame">
         <video id="video" playsinline webkit-playsinline muted autoplay disablepictureinpicture disableremoteplayback></video>
         <div class="grid-lines" id="gridLines" hidden></div>
@@ -158,9 +172,36 @@
 
       <div class="about">
         <p><b>🔇 シャッター音なし</b><br>カメラの映像をそのまま切り取るので、撮影音は鳴りません。</p>
-        <p><b>🎵 YouTube や音楽を止めない</b><br>マイクを使わず、音も一切出さないので、他のアプリの再生を邪魔しません。</p>
+        <p><b>🎵 音楽を止めない</b><br>マイクを使わず、音も一切出さないので、音楽アプリの再生を邪魔しません。</p>
+        <p><b>▶ YouTube はアプリ内で</b><br>iPhone では、カメラを使い始めると他のアプリの動画（ミニプレイヤー／ピクチャ・イン・ピクチャ）を iOS が止めてしまいます。カメラ画面の「YouTube」から、このアプリの中で再生してください。</p>
         <p class="warn">盗撮など、人の迷惑になる撮影は絶対にやめましょう。</p>
       </div>
+      <button class="btn block" type="button" data-close>閉じる</button>
+    </div>
+  </div>
+
+  <!-- YouTube のリンク入力 -->
+  <div class="modal" id="ytSheet" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="ytSheetTitle">
+      <div class="modal-grip"></div>
+      <h2 id="ytSheetTitle">YouTube を見ながら撮る</h2>
+      <p class="lead" id="ytLead"></p>
+      <form class="yt-form" id="ytForm">
+        <input class="field" id="ytInput" type="url" inputmode="url" placeholder="YouTube のリンクを貼り付け"
+               autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+        <button class="btn" id="ytPaste" type="button">貼り付け</button>
+      </form>
+      <p class="field-error" id="ytError" hidden></p>
+      <button class="btn primary block" id="ytPlay" type="button"><svg class="ic"><use href="#i-play"/></svg><span>再生する</span></button>
+      <div class="yt-recent-wrap" id="ytRecentWrap" hidden>
+        <div class="yt-recent-head">
+          <h3>最近の動画</h3>
+          <button class="text-btn" id="ytClearRecent" type="button">消去</button>
+        </div>
+        <div class="yt-recent" id="ytRecent"></div>
+      </div>
+      <p class="small-note">リンクは YouTube アプリや Brave の「共有」→「コピー」で取れます。</p>
       <button class="btn block" type="button" data-close>閉じる</button>
     </div>
   </div>

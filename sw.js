@@ -1,5 +1,5 @@
 // オフラインでも起動できるようにアプリ本体をキャッシュする（写真は扱わない）
-const CACHE = 'manner-camera-v1';
+const CACHE = 'manner-camera-v2';
 const ASSETS = [
   './',
   'index.html',
